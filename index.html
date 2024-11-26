@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Musical Flying Objects</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+            background: #1a1a1a;
+        }
+        #controls {
+            margin: 10px;
+            padding: 10px;
+            background: #333;
+            color: white;
+        }
+        button {
+            margin: 5px;
+            padding: 5px 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <button onclick="startPlaying()">Start Music</button>
+        <button onclick="toggleRhythm()">Change Rhythm</button>
+        <button onclick="adjustTempo(50)">Slower</button>
+        <button onclick="adjustTempo(-50)">Faster</button>
+    </div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        // מאגר הצלילים
+        const soundPool = {
+            notes: [],
+            maxSize: 30,
+
+            addNote(frequency, velocity, color) {
+                const note = {
+                    frequency,
+                    velocity,
+                    color,
+                    timestamp: Date.now()
+                };
+                if (this.notes.length >= this.maxSize) {
+                    this.notes.shift();
+                }
+                this.notes.push(note);
+            },
+
+            getNoteByIndex(index) {
+                if (this.notes.length === 0) return null;
+                const sortedNotes = [...this.notes].sort((a, b) => a.frequency - b.frequency);
+                return sortedNotes[index % this.notes.length];
+            }
+        };
+
+        // תבניות מקצב
+        const rhythmPatterns = [
+            [0.5, 0.5, 0.5, 0.5, 1, 1,1, 0.5, 0.5, 1],     // בום צ'ק צ'ק בום
+            [0.5, 1, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 1, 1],  // צ'ק-צ'ק-צ'ק-צ'ק בום בום
+            [,1, 1, 0.5, 0.5, 0.5, 0.5,1, 0.3, 0.3, 0.3, 1], // בום צ'ק-צ'ק-צ'ק בום
+            [1, 1, 0.5, 0.5, 0.5, 0.5]  // בום בום צ'ק-צ'ק-צ'ק-צ'ק
+        ];
+
+        let currentPattern = 0;
+        let baseTempo = 400;
+        let isPlaying = false;
+
+        // הגדרת הצלילים - עכשיו עם כפול צלילים
+ const notes = [
+    // אוקטבה ראשונה - פנטטוני מייג'ור בדו
+    261.63,  // דו
+    293.66,  // רה
+    329.63,  // מי
+    392.00,  // סול
+    440.00,  // לה
+    // אוקטבה שנייה - אותו דבר אוקטבה מעל
+    523.25,  // דו
+    587.33,  // רה
+    659.25,  // מי
+    783.99,  // סול
+    880.00   // לה
+];
+
+        // יצירת המיתרים הכפולים
+   const strings = notes.map((note, index) => ({
+    x: 70 + index * 75,    // מרווח מחושב: (800 - 2*70) / 9 = בערך 75
+    y: 300,
+    width: 65,             // רוחב קטן יותר
+    height: 500,           // גובה קטן יותר
+    color: `hsl(${(index * 36) % 360}, 70%, 60%)`,
+    note: note,
+    speed: 0.5,
+    direction: 1
+}));
+
+        const players = [
+            {
+                x: 400,
+                y: 300,
+                radius: 10,
+                speedX: 4,
+                speedY: 3,
+                color: '#ffffff'
+            },
+            {
+                x: 200,
+                y: 200,
+                radius: 10,
+                speedX: -3,
+                speedY: 4,
+                color: '#ffffff'
+            },
+             {
+                x: 100,
+                y: 200,
+                radius: 10,
+                speedX: -3,
+                speedY: 4,
+                color: '#ffffff'
+            },
+            {
+                x: 300,
+                y: 100,
+                radius: 10,
+                speedX: 3,
+                speedY: -4,
+                color: '#ffffff'
+            },
+                      {
+                x: 340,
+                y: 100,
+                radius: 10,
+                speedX: 3,
+                speedY: -4,
+                color: '#ffffff'
+            },
+            {
+                x: 100,
+                y: 300,
+                radius: 10,
+                speedX: -4,
+                speedY: -3,
+                color: '#ffffff'
+            }
+        ];
+
+        function playNote(frequency, velocity = 1) {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.type = 'triangle';
+            oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+
+            const volume = Math.min(velocity * 0.3, 0.4);
+            gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + 0.3);
+        }
+
+        function playNextBeat(patternIndex, beatIndex) {
+            if (!isPlaying || soundPool.notes.length === 0) return;
+
+            const pattern = rhythmPatterns[patternIndex];
+            const velocity = pattern[beatIndex];
+            const note = soundPool.getNoteByIndex(beatIndex);
+
+            if (note) {
+                playNote(note.frequency, velocity);
+            }
+
+            const nextBeat = (beatIndex + 1) % pattern.length;
+            const nextPattern = nextBeat === 0 ? (patternIndex + 1) % rhythmPatterns.length : patternIndex;
+
+            setTimeout(() => playNextBeat(nextPattern, nextBeat), baseTempo * velocity);
+        }
+
+        function checkCollision(player, string) {
+            return (
+                player.x + player.radius > string.x - string.width/2 &&
+                player.x - player.radius < string.x + string.width/2 &&
+                player.y + player.radius > string.y - string.height/2 &&
+                player.y - player.radius < string.y + string.height/2
+            );
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            strings.forEach(string => {
+                string.y += string.speed * string.direction;
+                if (string.y > 400 || string.y < 200) {
+                    string.direction *= -1;
+                }
+
+                ctx.fillStyle = string.color;
+                ctx.fillRect(string.x - string.width/2, string.y - string.height/2,
+                           string.width, string.height);
+            });
+
+            players.forEach(player => {
+                player.x += player.speedX;
+                player.y += player.speedY;
+
+                if (player.x < player.radius || player.x > canvas.width - player.radius)
+                    player.speedX *= -1;
+                if (player.y < player.radius || player.y > canvas.height - player.radius)
+                    player.speedY *= -1;
+
+                strings.forEach(string => {
+                    if (checkCollision(player, string)) {
+                        soundPool.addNote(string.note, 1, string.color);
+                        player.color = string.color;
+                        setTimeout(() => player.color = '#ffffff', 200);
+                    }
+                });
+
+                ctx.beginPath();
+                ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+                ctx.fillStyle = player.color;
+                ctx.fill();
+                ctx.closePath();
+            });
+
+            requestAnimationFrame(animate);
+        }
+
+        function startPlaying() {
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+            if (!isPlaying) {
+                isPlaying = true;
+                playNextBeat(0, 0);
+            }
+        }
+
+        function toggleRhythm() {
+            currentPattern = (currentPattern + 1) % rhythmPatterns.length;
+        }
+
+        function adjustTempo(delta) {
+            baseTempo = Math.max(100, Math.min(500, baseTempo + delta));
+        }
+
+        // התחלת האנימציה
+        animate();
+    </script>
+</body>
+</html>
